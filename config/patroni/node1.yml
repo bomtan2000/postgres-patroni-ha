@@ -1,0 +1,90 @@
+# /etc/patroni/patroni.yml on node1   (owner postgres, mode 600: it holds passwords)
+# Same file on the 3 nodes except: name, restapi.connect_address,
+# postgresql.connect_address, tags.failover_priority.
+# LAB PASSWORDS ONLY.
+namespace: /postgres-ha/
+scope: pg-cluster
+name: node1
+
+# REST API: HAProxy health checks hit /primary and /replica on this port
+restapi:
+  listen: 0.0.0.0:8008
+  connect_address: 192.168.63.11:8008
+
+# All 3 etcd members: if the local etcd dies, Patroni keeps talking to the other two.
+# With only the local one listed, a dead local etcd = this node loses the DCS and demotes.
+etcd3:
+  hosts:
+    - 192.168.63.11:2379
+    - 192.168.63.12:2379
+    - 192.168.63.13:2379
+
+bootstrap:
+  # Written to etcd once, when the cluster is first created. Change later with
+  # "patronictl edit-config", not by editing this file.
+  dcs:
+    ttl: 30                          # leader key lifetime: worst-case failure detection
+    loop_wait: 10
+    retry_timeout: 10
+    maximum_lag_on_failover: 1048576 # a replica >1 MB behind is never promoted
+    postgresql:
+      use_pg_rewind: true            # old leader rejoins without a full basebackup
+      use_slots: true                # primary keeps WAL until every replica has it
+      parameters:
+        wal_level: replica
+        hot_standby: "on"
+        wal_keep_size: 160MB         # replaces wal_keep_segments (removed in PG13)
+        max_wal_senders: 5
+        max_replication_slots: 10
+        wal_log_hints: "on"          # required by pg_rewind
+        logging_collector: "on"
+        max_wal_size: 10GB
+        password_encryption: scram-sha-256
+        archive_mode: "on"
+        archive_timeout: 600s
+        archive_command: "cp -f %p /home/postgres/archived/%f"
+
+  initdb:
+    - encoding: UTF8
+    - data-checksums
+
+  # Replaces pg_hba.conf entirely at initdb. Local lines are needed: Patroni itself
+  # connects through 127.0.0.1, and "sudo -u postgres psql" through the socket.
+  pg_hba:
+    - local all all peer
+    - host all all 127.0.0.1/32 scram-sha-256
+    - host replication replicator 127.0.0.1/32 scram-sha-256
+    - host replication replicator 192.168.63.0/24 scram-sha-256
+    - host all all 192.168.63.0/24 scram-sha-256
+
+postgresql:
+  cluster_name: pg-cluster
+  listen: 0.0.0.0:5432
+  connect_address: 192.168.63.11:5432
+  data_dir: /var/lib/pgsql/18/data/
+  bin_dir: /usr/pgsql-18/bin
+  pgpass: /tmp/pgpass0
+  authentication:
+    replication:
+      username: replicator
+      password: ReplLab@123
+    superuser:
+      username: postgres
+      password: PgLab@123
+    rewind:
+      username: rewind_user
+      password: RewindLab@123
+  parameters:
+    unix_socket_directories: /var/run/postgresql/
+  create_replica_methods:
+    - basebackup
+  basebackup:
+    checkpoint: 'fast'
+
+tags:
+  nofailover: false
+  noloadbalance: false
+  clonefrom: false
+  nosync: false
+  # Leader election preference on failover: node1 = 3, node2 = 2, node3 = 1
+  failover_priority: 3

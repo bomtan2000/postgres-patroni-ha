@@ -1,0 +1,6 @@
+########## postgres-patroni-ha ##########
+# Append to /etc/hosts on all 3 nodes. HAProxy backends and Patroni use these names.
+192.168.63.11 node1
+192.168.63.12 node2
+192.168.63.13 node3
+#########################################

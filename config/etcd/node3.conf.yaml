@@ -1,0 +1,16 @@
+# /etc/etcd/etcd.conf.yaml on node3
+# DCS for Patroni: holds the leader key and the cluster config. Quorum = 2 of 3.
+name: 'node3'
+initial-cluster-token: pg-cluster
+# existing: joins a running cluster; run 'etcdctl member add node3' first
+initial-cluster-state: existing
+initial-cluster: node1=http://192.168.63.11:2380,node2=http://192.168.63.12:2380,node3=http://192.168.63.13:2380
+data-dir: /var/lib/etcd
+
+# 2380 = peer traffic (etcd <-> etcd)
+initial-advertise-peer-urls: http://192.168.63.13:2380
+listen-peer-urls: http://192.168.63.13:2380
+
+# 2379 = client traffic (Patroni, etcdctl). 127.0.0.1 too, so etcdctl works locally.
+advertise-client-urls: http://192.168.63.13:2379
+listen-client-urls: http://192.168.63.13:2379,http://127.0.0.1:2379
